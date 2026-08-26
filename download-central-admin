@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Narrow root helper for systemd configuration and ffmpeg package updates."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+SETTINGS_PATH = Path("/var/lib/download-central/settings.json")
+MOUNT_ROOT = Path("/mnt").resolve()
+
+
+def validated_path(value: object) -> Path:
+    raw = str(value or "").strip()
+    if not raw or "\x00" in raw or "\n" in raw or "\r" in raw:
+        raise ValueError("Invalid empty or multiline path")
+    result = Path(raw).resolve(strict=False)
+    result.relative_to(MOUNT_ROOT)
+    if result == MOUNT_ROOT:
+        raise ValueError("/mnt itself cannot be a download destination")
+    return result
+
+
+def apply_settings() -> None:
+    payload = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    for name in ("files", "hls", "youtube"):
+        validated_path(payload.get(name))
+    # Restart from an independent transient unit after the HTTP response has
+    # returned. Restarting synchronously would terminate this helper with its
+    # parent service cgroup before the settings request can complete.
+    subprocess.run(
+        [
+            "/usr/bin/systemd-run",
+            "--collect",
+            f"--unit=download-central-restart-{os.getpid()}",
+            "--on-active=1s",
+            "/usr/bin/systemctl",
+            "restart",
+            "download-central.service",
+        ],
+        check=True,
+    )
+
+
+def update_ffmpeg() -> None:
+    subprocess.run(["/usr/bin/apt-get", "update"], check=True)
+    subprocess.run(["/usr/bin/apt-get", "install", "--only-upgrade", "--yes", "ffmpeg"], check=True)
+
+
+def main() -> int:
+    if os.geteuid() != 0:
+        print("This helper must run as root", file=sys.stderr)
+        return 1
+    action = sys.argv[1] if len(sys.argv) == 2 else ""
+    if action == "apply-settings":
+        apply_settings()
+    elif action == "update-ffmpeg":
+        update_ffmpeg()
+    else:
+        print("Expected apply-settings or update-ffmpeg", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

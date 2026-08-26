@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Deploy to Raspberry Pi",
+      "type": "shell",
+      "command": "./deploy.sh",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PI_HOST": "${input:piHost}"
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "piHost",
+      "type": "promptString",
+      "description": "Raspberry Pi SSH destination (user@host)",
+      "default": "pi@192.168.1.5"
+    }
+  ]
+}
