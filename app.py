@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -60,10 +62,245 @@ settings_lock = threading.RLock()
 update_lock = threading.Lock()
 update_jobs: dict[str, dict] = {}
 embedded_services: dict[str, Flask] = {}
+resource_lock = threading.Lock()
+last_network_sample: tuple[float, dict[str, int]] | None = None
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return None
+
+
+def cpu_times() -> tuple[int, int] | None:
+    payload = read_text(Path("/proc/stat"))
+    if not payload:
+        return None
+    first_line = payload.splitlines()[0].split()
+    if not first_line or first_line[0] != "cpu":
+        return None
+    try:
+        values = [int(value) for value in first_line[1:]]
+    except ValueError:
+        return None
+    if len(values) < 4:
+        return None
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    return sum(values), idle
+
+
+def cpu_usage_percent(sample_seconds: float = 0.1) -> float | None:
+    before = cpu_times()
+    if before is None:
+        return None
+    time.sleep(sample_seconds)
+    after = cpu_times()
+    if after is None:
+        return None
+    total_delta = after[0] - before[0]
+    idle_delta = after[1] - before[1]
+    if total_delta <= 0:
+        return None
+    return round(max(0.0, min(100.0, 100.0 * (total_delta - idle_delta) / total_delta)), 1)
+
+
+def cpu_temperature() -> tuple[float | None, str | None]:
+    readings: list[tuple[float, str]] = []
+    thermal_root = Path("/sys/class/thermal")
+    try:
+        zones = sorted(thermal_root.glob("thermal_zone*"))
+    except OSError:
+        zones = []
+    for zone in zones:
+        raw = read_text(zone / "temp")
+        if raw is None:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        if abs(value) >= 1000:
+            value /= 1000.0
+        label = read_text(zone / "type") or zone.name
+        if -20 <= value <= 150:
+            readings.append((value, label))
+    if not readings:
+        return None, None
+    preferred = [item for item in readings if any(token in item[1].lower() for token in ("cpu", "soc", "bcm"))]
+    value, label = max(preferred or readings, key=lambda item: item[0])
+    return round(value, 1), label
+
+
+def memory_summary() -> dict[str, int | float | None]:
+    values: dict[str, int] = {}
+    payload = read_text(Path("/proc/meminfo"))
+    if payload:
+        for line in payload.splitlines():
+            if ":" not in line:
+                continue
+            key, raw = line.split(":", 1)
+            parts = raw.strip().split()
+            try:
+                amount = int(parts[0])
+            except (IndexError, ValueError):
+                continue
+            values[key] = amount * 1024 if len(parts) > 1 and parts[1].lower() == "kb" else amount
+    total = values.get("MemTotal")
+    available = values.get("MemAvailable", values.get("MemFree"))
+    used = total - available if total is not None and available is not None else None
+    swap_total = values.get("SwapTotal")
+    swap_free = values.get("SwapFree")
+    swap_used = swap_total - swap_free if swap_total is not None and swap_free is not None else None
+    return {
+        "total_bytes": total,
+        "available_bytes": available,
+        "used_bytes": used,
+        "usage_percent": round(used * 100 / total, 1) if used is not None and total else None,
+        "swap_total_bytes": swap_total,
+        "swap_used_bytes": swap_used,
+    }
+
+
+def network_counters() -> tuple[dict[str, int], list[dict[str, object]]]:
+    totals = {key: 0 for key in ("rx_bytes", "rx_packets", "rx_errors", "rx_dropped", "tx_bytes", "tx_packets", "tx_errors", "tx_dropped")}
+    interfaces: list[dict[str, object]] = []
+    payload = read_text(Path("/proc/net/dev"))
+    if not payload:
+        return totals, interfaces
+    for line in payload.splitlines()[2:]:
+        if ":" not in line:
+            continue
+        name, raw = line.split(":", 1)
+        name = name.strip()
+        if name == "lo":
+            continue
+        fields = raw.split()
+        if len(fields) < 16:
+            continue
+        try:
+            values = [int(value) for value in fields]
+        except ValueError:
+            continue
+        counters = {
+            "rx_bytes": values[0], "rx_packets": values[1], "rx_errors": values[2], "rx_dropped": values[3],
+            "tx_bytes": values[8], "tx_packets": values[9], "tx_errors": values[10], "tx_dropped": values[11],
+        }
+        for key, value in counters.items():
+            totals[key] += value
+        state = read_text(Path("/sys/class/net") / name / "operstate")
+        interfaces.append({"name": name, "state": state or "unknown", **counters})
+    return totals, interfaces
+
+
+def network_summary() -> dict[str, object]:
+    global last_network_sample
+    counters, interfaces = network_counters()
+    now = time.monotonic()
+    received_per_second = None
+    sent_per_second = None
+    sample_seconds = None
+    with resource_lock:
+        if last_network_sample is not None:
+            previous_time, previous = last_network_sample
+            sample_seconds = now - previous_time
+            if sample_seconds > 0:
+                received_per_second = max(0, counters["rx_bytes"] - previous["rx_bytes"]) / sample_seconds
+                sent_per_second = max(0, counters["tx_bytes"] - previous["tx_bytes"]) / sample_seconds
+        last_network_sample = now, dict(counters)
+    return {
+        **counters,
+        "received_bytes_per_second": round(received_per_second, 1) if received_per_second is not None else None,
+        "sent_bytes_per_second": round(sent_per_second, 1) if sent_per_second is not None else None,
+        "sample_seconds": round(sample_seconds, 2) if sample_seconds is not None else None,
+        "interfaces": interfaces,
+    }
+
+
+def filesystem_summary(path: Path, label: str) -> dict[str, object]:
+    result: dict[str, object] = {"label": label, "path": str(path), "available": False}
+    try:
+        if not path.exists() or not path.is_dir():
+            return result
+        usage = shutil.disk_usage(path)
+        result.update({
+            "available": True,
+            "writable": os.access(path, os.W_OK),
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "free_bytes": usage.free,
+            "usage_percent": round(usage.used * 100 / usage.total, 1) if usage.total else None,
+        })
+    except OSError as error:
+        result["error"] = str(error)
+    return result
+
+
+def uptime_seconds() -> float | None:
+    payload = read_text(Path("/proc/uptime"))
+    if not payload:
+        return None
+    try:
+        return round(float(payload.split()[0]), 1)
+    except (IndexError, ValueError):
+        return None
+
+
+def process_summary() -> dict[str, int | None]:
+    rss_bytes = None
+    os_threads = None
+    payload = read_text(Path("/proc/self/status"))
+    if payload:
+        for line in payload.splitlines():
+            if line.startswith("VmRSS:"):
+                try:
+                    rss_bytes = int(line.split()[1]) * 1024
+                except (IndexError, ValueError):
+                    pass
+            elif line.startswith("Threads:"):
+                try:
+                    os_threads = int(line.split()[1])
+                except (IndexError, ValueError):
+                    pass
+    return {"pid": os.getpid(), "rss_bytes": rss_bytes, "threads": os_threads or threading.active_count()}
+
+
+def resource_summary() -> dict[str, object]:
+    try:
+        load_average = [round(value, 2) for value in os.getloadavg()]
+    except OSError:
+        load_average = []
+    temperature, temperature_source = cpu_temperature()
+    settings = read_settings()
+    destinations = [filesystem_summary(Path(settings[name]), SERVICES[name]["name"]) for name in SERVICES]
+    return {
+        "checked_at": utc_now(),
+        "system": {
+            "hostname": platform.node(),
+            "kernel": platform.release(),
+            "architecture": platform.machine(),
+            "uptime_seconds": uptime_seconds(),
+        },
+        "cpu": {
+            "usage_percent": cpu_usage_percent(),
+            "temperature_celsius": temperature,
+            "temperature_source": temperature_source,
+            "logical_cores": os.cpu_count(),
+            "load_average": load_average,
+        },
+        "memory": memory_summary(),
+        "network": network_summary(),
+        "storage": {
+            "system": filesystem_summary(Path("/"), "Pi system"),
+            "temporary": filesystem_summary(Path("/var/tmp"), "Pi temporary"),
+            "destinations": destinations,
+        },
+        "process": process_summary(),
+    }
 
 
 def default_settings() -> dict[str, str]:
@@ -316,6 +553,11 @@ def aggregate_health():
         "services": services,
         "tools": {"yt_dlp": ytdlp, "ffmpeg": ffmpeg},
     })
+
+
+@app.get("/api/resources")
+def resources():
+    return jsonify(resource_summary())
 
 
 def set_update_job(job_id: str, **values: object) -> None:

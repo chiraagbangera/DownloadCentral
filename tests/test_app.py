@@ -102,3 +102,27 @@ def test_embedded_health_does_not_use_network(client, monkeypatch):
     payload, error = central.backend_json("files", "api/health")
     assert error is None
     assert payload == {"ok": True, "workers": 2}
+
+
+def test_resource_summary_contains_pi_metrics(client, monkeypatch):
+    monkeypatch.setattr(central, "cpu_usage_percent", lambda sample_seconds=0.1: 37.5)
+    monkeypatch.setattr(
+        central,
+        "network_summary",
+        lambda: {
+            "rx_bytes": 1000,
+            "tx_bytes": 500,
+            "received_bytes_per_second": 125.0,
+            "sent_bytes_per_second": 50.0,
+            "interfaces": [{"name": "eth0", "state": "up"}],
+        },
+    )
+    response = client.get("/api/resources")
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["cpu"]["usage_percent"] == 37.5
+    assert "temperature_celsius" in payload["cpu"]
+    assert "usage_percent" in payload["memory"]
+    assert payload["network"]["interfaces"][0]["name"] == "eth0"
+    assert len(payload["storage"]["destinations"]) == 3
+    assert payload["process"]["pid"] > 0
