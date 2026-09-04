@@ -52,6 +52,14 @@ Open the project folder in VS Code and run **Terminal → Run Build Task** (`⇧
 
 TCP port 100 is privileged. The systemd unit grants only `CAP_NET_BIND_SERVICE`; the combined web app and workers still run as the unprivileged `pi` user.
 
+## Browser HLS capture
+
+Save the following single line as a browser bookmark. On a loaded ETV movie page, running it opens `/capture`; Download Central reads the fragment in the browser and adds the last matching movie playlist to the HLS queue.
+
+```javascript
+javascript:(async()=>{const e="http://192.168.1.5:100/capture",t=performance.getEntriesByType("resource").map(e=>e.name).filter(e=>/\.m3u8(?:\?|$)/i.test(e)&&e.includes("/etv/content/"));if(!t.length)return void console.error("No movie M3U8 found. Refresh the page and wait for the player to finish loading.");const n=t[t.length-1],o=document.querySelector("#UIVideoPlayer")?.dataset.contentTitle||document.title||"video";console.log("Title:",o),console.log("HLS:",n);const r=new URL(e);r.hash=new URLSearchParams({url:n,title:o,referer:location.origin+"/",userAgent:navigator.userAgent}).toString();const a=window.open(r.toString(),"_blank");a?(a.opener=null,console.log("Opened the downloader capture page.")):console.error("The capture page was blocked. Allow pop-ups for this page and run the script again.")})();
+```
+
 ## Settings behavior
 
 Paths must be absolute and resolve below `/mnt`. Saving settings restarts the single Download Central service so all embedded workers use the new paths. Let active jobs finish before saving.

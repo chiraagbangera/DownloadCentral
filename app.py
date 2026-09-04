@@ -407,6 +407,7 @@ def command_version(command: list[str]) -> dict[str, object]:
 
 
 @app.get("/")
+@app.get("/capture")
 def index():
     return render_template(
         "index.html",

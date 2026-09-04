@@ -29,6 +29,13 @@ def test_index_contains_all_tabs(client):
         assert label in response.data
 
 
+def test_capture_route_serves_fragment_receiver(client):
+    response = client.get("/capture")
+    assert response.status_code == 200
+    assert b"function takeCaptureRequest()" in response.data
+    assert b"const pendingCapture=takeCaptureRequest();" in response.data
+
+
 def test_settings_reject_path_outside_mount(client):
     response = client.post(
         "/api/settings",
