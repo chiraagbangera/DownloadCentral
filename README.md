@@ -14,6 +14,8 @@ Download Central provides one uniform, tabbed UI for the Raspberry Pi file, HLS,
 ## What is new
 
 - One responsive UI with Files, HLS, YouTube, and Health & settings tabs
+- Active source links plus Stop, Retry, and Delete controls in every downloader
+- Activity logs that stay expanded and keep their review position during live updates
 - Aggregated reachability, storage, ffmpeg, and yt-dlp health
 - Live Raspberry Pi CPU usage/load, CPU temperature, memory/swap, uptime, process, network throughput/counters, and filesystem utilization
 - Persistent per-service destinations anywhere below `/mnt`

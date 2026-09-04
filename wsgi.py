@@ -11,6 +11,7 @@ from pathlib import Path
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 from app import app, read_settings, set_embedded_services
+from engine_controls import install_engine_controls
 
 
 ENGINE_PATHS = {
@@ -87,6 +88,9 @@ youtube_module = load_engine(
         "MAX_CONCURRENT_DOWNLOADS": os.environ.get("YOUTUBE_MAX_CONCURRENT_DOWNLOADS", "2"),
     },
 )
+
+install_engine_controls("hls", hls_module)
+install_engine_controls("youtube", youtube_module)
 
 engine_apps = {
     "files": files_module.app,

@@ -29,6 +29,15 @@ def test_index_contains_all_tabs(client):
         assert label in response.data
 
 
+def test_index_exposes_uniform_job_controls_and_persistent_logs(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b'url=j.url||j.source_url||""' in response.data
+    assert b"bindJobActions(service)" in response.data
+    assert b"captureJobUiState(service)" in response.data
+    assert b"restoreJobUiState(service)" in response.data
+
+
 def test_capture_route_serves_fragment_receiver(client):
     response = client.get("/capture")
     assert response.status_code == 200

@@ -23,7 +23,7 @@ apt-get install --yes openssl python3 python3-venv
 
 install -d -o "${APP_USER}" -g "${APP_GROUP}" "${INSTALL_DIR}" "${STATE_DIR}"
 install -d -o "${APP_USER}" -g "${APP_GROUP}" "${INSTALL_DIR}/templates"
-install -m 0644 "${SOURCE_DIR}/app.py" "${SOURCE_DIR}/wsgi.py" "${SOURCE_DIR}/requirements.txt" "${INSTALL_DIR}/"
+install -m 0644 "${SOURCE_DIR}/app.py" "${SOURCE_DIR}/engine_controls.py" "${SOURCE_DIR}/wsgi.py" "${SOURCE_DIR}/requirements.txt" "${INSTALL_DIR}/"
 install -m 0644 "${SOURCE_DIR}/templates/index.html" "${INSTALL_DIR}/templates/index.html"
 
 for engine in /opt/raspi-download-manager/app.py /opt/hls-video-downloader/app.py /opt/pi-ytdlp-web/app.py; do
