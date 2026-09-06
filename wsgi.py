@@ -10,7 +10,7 @@ from pathlib import Path
 
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
-from app import app, read_settings, set_embedded_services
+from app import app, read_settings, read_youtube_preferences, set_embedded_services
 from engine_controls import install_engine_controls
 
 
@@ -90,7 +90,7 @@ youtube_module = load_engine(
 )
 
 install_engine_controls("hls", hls_module)
-install_engine_controls("youtube", youtube_module)
+install_engine_controls("youtube", youtube_module, read_youtube_preferences())
 
 engine_apps = {
     "files": files_module.app,

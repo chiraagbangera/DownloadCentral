@@ -36,6 +36,11 @@ def test_index_exposes_uniform_job_controls_and_persistent_logs(client):
     assert b"bindJobActions(service)" in response.data
     assert b"captureJobUiState(service)" in response.data
     assert b"restoreJobUiState(service)" in response.data
+    assert b"qualityHtml(service,j)" in response.data
+    assert b"Selected video stream" in response.data
+    assert b"Selected audio stream" in response.data
+    assert b"setting-youtube-resolution" in response.data
+    assert b"preferenceEditorHtml(service,j)" in response.data
 
 
 def test_capture_route_serves_fragment_receiver(client):
@@ -58,6 +63,28 @@ def test_admin_token_is_required(client, monkeypatch):
     monkeypatch.setattr(central, "ADMIN_TOKEN", "secret")
     response = client.post("/api/settings", json={"paths": {}})
     assert response.status_code == 401
+
+
+def test_youtube_preferences_are_persisted_with_paths(client, monkeypatch):
+    mount = Path(central.MOUNT_ROOT)
+    monkeypatch.setattr(
+        central.subprocess,
+        "run",
+        lambda *args, **kwargs: central.subprocess.CompletedProcess(args[0], 0, "", ""),
+    )
+    paths = {name: str(mount / name) for name in central.SERVICES}
+    preferences = {"resolution": "1440", "codec": "h265", "container": "mkv"}
+
+    response = client.post(
+        "/api/settings",
+        json={"paths": paths, "youtube_preferences": preferences},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["youtube_preferences"] == preferences
+    saved = json.loads(central.SETTINGS_PATH.read_text(encoding="utf-8"))
+    assert saved["youtube_preferences"] == preferences
+    assert client.get("/api/settings").get_json()["youtube_preferences"] == preferences
 
 
 def test_proxy_forwards_to_selected_backend(client, monkeypatch):

@@ -16,6 +16,8 @@ from urllib.parse import urljoin
 import requests
 from flask import Flask, Response, jsonify, render_template, request
 
+from engine_controls import YOUTUBE_DEFAULT_PREFERENCES, normalize_youtube_preferences
+
 
 APP_NAME = "Download Central"
 MOUNT_ROOT = Path(os.environ.get("MOUNT_ROOT", "/mnt")).resolve()
@@ -307,17 +309,28 @@ def default_settings() -> dict[str, str]:
     return {name: str(definition["default_path"]) for name, definition in SERVICES.items()}
 
 
-def read_settings() -> dict[str, str]:
-    result = default_settings()
+def read_settings_document() -> dict[str, object]:
     try:
         payload = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        if isinstance(payload, dict):
-            for name in SERVICES:
-                if isinstance(payload.get(name), str):
-                    result[name] = payload[name]
+        return payload if isinstance(payload, dict) else {}
     except (OSError, ValueError, TypeError):
-        pass
+        return {}
+
+
+def read_settings() -> dict[str, str]:
+    result = default_settings()
+    payload = read_settings_document()
+    for name in SERVICES:
+        if isinstance(payload.get(name), str):
+            result[name] = payload[name]
     return result
+
+
+def read_youtube_preferences() -> dict[str, str]:
+    try:
+        return normalize_youtube_preferences(read_settings_document().get("youtube_preferences"))
+    except ValueError:
+        return dict(YOUTUBE_DEFAULT_PREFERENCES)
 
 
 def path_inside_mount(value: object) -> Path:
@@ -337,7 +350,7 @@ def path_inside_mount(value: object) -> Path:
     return resolved
 
 
-def write_settings(settings: dict[str, str]) -> None:
+def write_settings(settings: dict[str, object]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     temporary = SETTINGS_PATH.with_suffix(f".{secrets.token_hex(4)}.tmp")
     temporary.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -450,7 +463,12 @@ def proxy_backend(service: str, path: str):
 
 @app.get("/api/settings")
 def get_settings():
-    return jsonify({"mount_root": str(MOUNT_ROOT), "paths": read_settings(), "admin_token_required": bool(ADMIN_TOKEN)})
+    return jsonify({
+        "mount_root": str(MOUNT_ROOT),
+        "paths": read_settings(),
+        "youtube_preferences": read_youtube_preferences(),
+        "admin_token_required": bool(ADMIN_TOKEN),
+    })
 
 
 @app.post("/api/settings")
@@ -464,6 +482,10 @@ def save_settings():
         return jsonify({"error": "A paths object is required."}), 400
     try:
         normalized = {name: str(path_inside_mount(paths.get(name))) for name in SERVICES}
+        youtube_preferences = normalize_youtube_preferences(
+            payload.get("youtube_preferences"),
+            read_youtube_preferences(),
+        )
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
 
@@ -477,7 +499,7 @@ def save_settings():
             pass
     with settings_lock:
         try:
-            write_settings(normalized)
+            write_settings({**normalized, "youtube_preferences": youtube_preferences})
             completed = subprocess.run(
                 ["sudo", "-n", ADMIN_HELPER, "apply-settings"],
                 capture_output=True,
@@ -490,7 +512,12 @@ def save_settings():
     if completed.returncode != 0:
         message = (completed.stderr or completed.stdout).strip() or f"Helper exited with {completed.returncode}"
         return jsonify({"error": f"Settings were saved but could not be applied: {message}"}), 500
-    return jsonify({"ok": True, "paths": normalized, "message": "Settings saved; Download Central is restarting."})
+    return jsonify({
+        "ok": True,
+        "paths": normalized,
+        "youtube_preferences": youtube_preferences,
+        "message": "Settings saved; Download Central is restarting.",
+    })
 
 
 @app.get("/api/directories")

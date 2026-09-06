@@ -9,13 +9,16 @@ Download Central provides one uniform, tabbed UI for the Raspberry Pi file, HLS,
 - Direct-to-NAS downloads when size is unknown or local free space is insufficient
 - File discovery, Google Drive folders, resume, cancel, retry, and cleanup
 - Direct `.m3u8` capture, Referer support, ffmpeg progress, and MP4 output
-- YouTube playlist support, HDR/codec selection, merge headroom, and activity logs
+- YouTube playlist support, configurable quality selection, merge headroom, and activity logs
 
 ## What is new
 
 - One responsive UI with Files, HLS, YouTube, and Health & settings tabs
 - Active source links plus Stop, Retry, and Delete controls in every downloader
 - Activity logs that stay expanded and keep their review position during live updates
+- Persistent YouTube resolution, codec, and MP4/MKV preferences, plus editable per-job settings while queued
+- Smart YouTube selection that keeps the highest resolution tier, then prefers HDR AV1 and H.265 with broader codec/container fallbacks
+- The actual chosen video/audio resolution, frame rate, HDR mode, codecs, bitrates, and format IDs shown per job
 - Aggregated reachability, storage, ffmpeg, and yt-dlp health
 - Live Raspberry Pi CPU usage/load, CPU temperature, memory/swap, uptime, process, network throughput/counters, and filesystem utilization
 - Persistent per-service destinations anywhere below `/mnt`
@@ -67,6 +70,8 @@ javascript:(async()=>{const e="http://192.168.1.5:100/capture",t=performance.get
 Paths must be absolute and resolve below `/mnt`. Saving settings restarts the single Download Central service so all embedded workers use the new paths. Let active jobs finish before saving.
 
 The file downloader still supports subfolders within its configured root for individual batches. The settings page changes that root itself.
+
+YouTube defaults are stored in the same `settings.json` file. The default policy caps downloads at 4K, keeps the highest available resolution tier, prefers AV1 for HDR and then H.265 inside that tier, and requests MP4 with MKV as the fallback. A resolution is a ceiling, so unavailable 4K automatically falls back to the best lower resolution. Queued jobs can be edited without changing their queue position; applying new settings to an active job stops it and requeues it at the front.
 
 ## Tool updates
 
