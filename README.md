@@ -71,7 +71,7 @@ Paths must be absolute and resolve below `/mnt`. Saving settings restarts the si
 
 The file downloader still supports subfolders within its configured root for individual batches. The settings page changes that root itself.
 
-YouTube defaults are stored in the same `settings.json` file. The default policy caps downloads at 4K, keeps the highest available resolution tier, prefers AV1 for HDR and then H.265 inside that tier, and requests MP4 with MKV as the fallback. A resolution is a ceiling, so unavailable 4K automatically falls back to the best lower resolution. Queued jobs can be edited without changing their queue position; applying new settings to an active job stops it and requeues it at the front.
+YouTube defaults are stored in the same `settings.json` file. The default policy caps downloads at 4K, keeps the highest available resolution tier, prefers AV1 for HDR and then H.265 inside that tier, and requests MP4 with MKV as the fallback. When MP4 is preferred, an MP4-compatible AV1 stream is selected before a VP9 stream that would force MKV; this is one of the cases where SDR AV1 is beneficial. A resolution is a ceiling, so unavailable 4K automatically falls back to the best lower resolution. Queued jobs can be edited without changing their queue position; applying new settings to an active job stops it and requeues it at the front.
 
 ## Tool updates
 

@@ -82,10 +82,16 @@ def build_youtube_format_selector(preferences: dict[str, str]) -> str:
         "vp9_hdr": "[vcodec~='^(vp09|vp9)'][dynamic_range~='^(HDR|HLG|DV)']",
         "vp9": "[vcodec~='^(vp09|vp9)']",
         "av1": "[vcodec^=av01]",
+        "av1_mp4": "[vcodec^=av01][ext=mp4]",
         "non_av1": "[vcodec!^=av01]",
         "any": "",
     }
-    smart_order = ["av1_hdr", "h265_hdr", "h265", "h264", "vp9_hdr", "vp9", "non_av1", "any"]
+    smart_order = ["av1_hdr", "h265_hdr", "h265", "h264"]
+    if preferences["container"] == "mp4":
+        # SDR AV1 is normally avoided in Smart mode, but becomes useful when
+        # it is the only way to keep both the requested resolution and MP4.
+        smart_order.append("av1_mp4")
+    smart_order.extend(["vp9_hdr", "vp9", "non_av1", "any"])
     preferred = {
         "smart": [],
         "h265": ["h265"],

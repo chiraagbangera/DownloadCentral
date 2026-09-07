@@ -169,6 +169,9 @@ def test_smart_selector_caps_4k_and_prefers_hdr_av1_then_h265():
     assert selector.index("bestvideo[format_note^=2160p][vcodec~='^(vp09|vp9)']") < selector.index(
         "bestvideo[format_note^=1440p][vcodec~='^(hvc1|hev1|hevc|h265)']"
     )
+    assert selector.index("bestvideo[format_note^=2160p][vcodec^=av01][ext=mp4]") < selector.index(
+        "bestvideo[format_note^=2160p][vcodec~='^(vp09|vp9)']"
+    )
     assert "bestvideo[height<=2160]" in selector
     assert "bestaudio[ext=m4a]" in selector
     assert selector.endswith("best[height<=2160]")
