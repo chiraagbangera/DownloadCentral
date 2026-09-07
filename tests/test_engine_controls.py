@@ -156,7 +156,7 @@ def test_combined_youtube_format_reports_both_tracks():
     assert audio["sample_rate_hz"] == 44100
 
 
-def test_smart_selector_caps_4k_and_prefers_hdr_av1_then_h265():
+def test_smart_selector_prefers_hdr_av1_then_h265_then_h264():
     selector = engine_controls.build_youtube_format_selector({
         "resolution": "2160",
         "codec": "smart",
@@ -165,16 +165,31 @@ def test_smart_selector_caps_4k_and_prefers_hdr_av1_then_h265():
 
     av1_hdr = selector.index("[vcodec^=av01][dynamic_range~='^(HDR|HLG|DV)']")
     h265 = selector.index("[vcodec~='^(hvc1|hev1|hevc|h265)']")
-    assert av1_hdr < h265
+    h264 = selector.index("[vcodec^=avc1]")
+    vp9 = selector.index("[vcodec~='^(vp09|vp9)']")
+    assert av1_hdr < h265 < h264 < vp9
     assert selector.index("bestvideo[format_note^=2160p][vcodec~='^(vp09|vp9)']") < selector.index(
-        "bestvideo[format_note^=1440p][vcodec~='^(hvc1|hev1|hevc|h265)']"
-    )
-    assert selector.index("bestvideo[format_note^=2160p][vcodec^=av01][ext=mp4]") < selector.index(
-        "bestvideo[format_note^=2160p][vcodec~='^(vp09|vp9)']"
+        "bestvideo[format_note^=1440p][vcodec^=av01][dynamic_range~='^(HDR|HLG|DV)']"
     )
     assert "bestvideo[height<=2160]" in selector
     assert "bestaudio[ext=m4a]" in selector
-    assert selector.endswith("best[height<=2160]")
+    assert selector.endswith("best[height<=2160][vcodec!^=av01]")
+
+
+def test_all_codec_preferences_hard_exclude_sdr_av1():
+    hdr_filter = "[vcodec^=av01][dynamic_range~='^(HDR|HLG|DV)']"
+
+    for codec in ("smart", "h265", "h264", "vp9", "av1"):
+        selector = engine_controls.build_youtube_format_selector({
+            "resolution": "2160",
+            "codec": codec,
+            "container": "mp4",
+        })
+
+        # Every positive AV1 selection must also require an HDR-family range.
+        assert selector.count("[vcodec^=av01]") == selector.count(hdr_filter)
+        assert "best[height<=2160][ext=mp4][vcodec!^=av01]" in selector
+        assert selector.endswith("best[height<=2160][vcodec!^=av01]")
 
 
 def test_smart_selector_handles_cropped_youtube_resolution_labels():
@@ -185,10 +200,26 @@ def test_smart_selector_handles_cropped_youtube_resolution_labels():
     })
 
     # bXoZjadrHpU exposes 3840x2026 as format_note=2160p and 1920x1012 as
-    # format_note=1080p. The nominal 4K tier must be tested before the generic
-    # codec fallback that previously selected the 1012-high H.264 stream.
+    # format_note=1080p. Matching the nominal label keeps the chosen resolution
+    # understandable even though the literal cinematic height is cropped.
     assert selector.index("bestvideo[format_note^=2160p]") < selector.index(
-        "bestvideo[height<=2160][vcodec^=avc1]"
+        "bestvideo[height<=2160][vcodec^=av01][dynamic_range~='^(HDR|HLG|DV)']"
+    )
+
+
+def test_explicit_h265_preference_does_not_fall_back_to_sdr_av1_for_mp4():
+    selector = engine_controls.build_youtube_format_selector({
+        "resolution": "2160",
+        "codec": "h265",
+        "container": "mp4",
+    })
+
+    assert "[vcodec^=av01][ext=mp4]" not in selector
+    assert selector.index("bestvideo[format_note^=360p][vcodec~='^(hvc1|hev1|hevc|h265)']") < selector.index(
+        "bestvideo[format_note^=2160p][vcodec^=av01][dynamic_range~='^(HDR|HLG|DV)']"
+    )
+    assert selector.index("bestvideo[format_note^=2160p][vcodec^=avc1]") < selector.index(
+        "bestvideo[format_note^=2160p][vcodec~='^(vp09|vp9)']"
     )
 
 

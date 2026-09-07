@@ -81,28 +81,17 @@ def build_youtube_format_selector(preferences: dict[str, str]) -> str:
         "h264": "[vcodec^=avc1]",
         "vp9_hdr": "[vcodec~='^(vp09|vp9)'][dynamic_range~='^(HDR|HLG|DV)']",
         "vp9": "[vcodec~='^(vp09|vp9)']",
-        "av1": "[vcodec^=av01]",
-        "av1_mp4": "[vcodec^=av01][ext=mp4]",
         "non_av1": "[vcodec!^=av01]",
-        "any": "",
     }
-    smart_order = ["av1_hdr", "h265_hdr", "h265", "h264"]
-    if preferences["container"] == "mp4":
-        # SDR AV1 is normally avoided in Smart mode, but becomes useful when
-        # it is the only way to keep both the requested resolution and MP4.
-        smart_order.append("av1_mp4")
-    smart_order.extend(["vp9_hdr", "vp9", "non_av1", "any"])
+    tier_order = ["av1_hdr", "h265_hdr", "h265", "h264"]
+    tier_order.extend(["vp9_hdr", "vp9", "non_av1"])
     preferred = {
         "smart": [],
         "h265": ["h265"],
-        "av1": ["av1"],
-        "vp9": ["vp9"],
         "h264": ["h264"],
+        "av1": ["av1_hdr"],
+        "vp9": ["vp9"],
     }[preferences["codec"]]
-    order: list[str] = []
-    for name in preferred + smart_order:
-        if name not in order:
-            order.append(name)
 
     audio_filters = ["bestaudio[ext=m4a]", "bestaudio"] if preferences["container"] == "mp4" else ["bestaudio"]
     selectors: list[str] = []
@@ -110,25 +99,31 @@ def build_youtube_format_selector(preferences: dict[str, str]) -> str:
     def add_video(video: str) -> None:
         selectors.extend(f"({video}+{audio})" for audio in audio_filters)
 
-    # An explicit codec choice is codec-first. Smart is resolution-first so a
-    # missing 4K HEVC stream does not silently turn an available 4K VP9 stream
-    # into a 1080p download; codec priority is applied inside each quality tier.
-    for name in preferred:
-        add_video(f"bestvideo{height_filter}{codec_filters[name]}")
     resolution_steps = [2160, 1440, 1080, 720, 480, 360]
+    # An explicit codec is tried at every allowed resolution first. If it is
+    # unavailable, fall back resolution-first so 4K is not silently lost.
+    for name in preferred:
+        for resolution in (value for value in resolution_steps if value <= int(height)):
+            add_video(f"bestvideo[format_note^={resolution}p]{codec_filters[name]}")
+        add_video(f"bestvideo{height_filter}{codec_filters[name]}")
     for resolution in (value for value in resolution_steps if value <= int(height)):
-        for name in smart_order:
+        for name in tier_order:
             # YouTube's nominal 2160p/1440p/etc. label survives cropped cinema
             # and portrait sources whose literal pixel height is non-standard
             # (for example 3840x2026 is still the 2160p representation).
             add_video(f"bestvideo[format_note^={resolution}p]{codec_filters[name]}")
-    for name in order:
+    for name in tier_order:
         add_video(f"bestvideo{height_filter}{codec_filters[name]}")
 
     # Combined formats cover videos where separate streams are unavailable.
+    if preferences["codec"] == "av1":
+        if preferences["container"] == "mp4":
+            selectors.append(f"best{height_filter}[ext=mp4]{codec_filters['av1_hdr']}")
+        selectors.append(f"best{height_filter}{codec_filters['av1_hdr']}")
+    combined_codec_filter = codec_filters["non_av1"]
     if preferences["container"] == "mp4":
-        selectors.append(f"best{height_filter}[ext=mp4]")
-    selectors.append(f"best{height_filter}")
+        selectors.append(f"best{height_filter}[ext=mp4]{combined_codec_filter}")
+    selectors.append(f"best{height_filter}{combined_codec_filter}")
     return "/".join(selectors)
 
 

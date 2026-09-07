@@ -11,7 +11,6 @@ APP_GROUP="${DOWNLOAD_CENTRAL_GROUP:-pi}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR=/opt/download-central
 STATE_DIR=/var/lib/download-central
-ENV_FILE=/etc/download-central.env
 
 if ! id "${APP_USER}" >/dev/null 2>&1; then
   echo "Service user ${APP_USER} does not exist. Set DOWNLOAD_CENTRAL_USER first." >&2
@@ -19,7 +18,7 @@ if ! id "${APP_USER}" >/dev/null 2>&1; then
 fi
 
 apt-get update
-apt-get install --yes openssl python3 python3-venv
+apt-get install --yes python3 python3-venv
 
 install -d -o "${APP_USER}" -g "${APP_GROUP}" "${INSTALL_DIR}" "${STATE_DIR}"
 install -d -o "${APP_USER}" -g "${APP_GROUP}" "${INSTALL_DIR}/templates"
@@ -50,17 +49,6 @@ EOF
 chmod 0440 /etc/sudoers.d/download-central
 visudo -cf /etc/sudoers.d/download-central
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-  ADMIN_TOKEN="$(openssl rand -hex 24)"
-  cat > "${ENV_FILE}" <<EOF
-ADMIN_TOKEN=${ADMIN_TOKEN}
-EOF
-  chmod 0640 "${ENV_FILE}"
-  chown root:"${APP_GROUP}" "${ENV_FILE}"
-else
-  ADMIN_TOKEN="$(sed -n 's/^ADMIN_TOKEN=//p' "${ENV_FILE}" | head -n 1)"
-fi
-
 LEGACY_UNITS=(raspi-download-manager.service hls-video-downloader.service ytdlp-web.service)
 systemctl disable --now "${LEGACY_UNITS[@]}" 2>/dev/null || true
 for unit in "${LEGACY_UNITS[@]}"; do
@@ -72,6 +60,4 @@ systemctl restart download-central.service
 
 echo
 echo "Download Central is available at http://192.168.1.5:100"
-echo "Admin token: ${ADMIN_TOKEN}"
-echo "Save this token; it is required for settings and tool updates."
 echo "The three legacy downloader service units were stopped, disabled, and removed."

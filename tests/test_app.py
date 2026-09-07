@@ -16,7 +16,6 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(central, "MOUNT_ROOT", mount.resolve())
     monkeypatch.setattr(central, "STATE_DIR", state.resolve())
     monkeypatch.setattr(central, "SETTINGS_PATH", (state / "settings.json").resolve())
-    monkeypatch.setattr(central, "ADMIN_TOKEN", "")
     central.set_embedded_services({})
     central.app.config.update(TESTING=True)
     return central.app.test_client()
@@ -59,10 +58,10 @@ def test_settings_reject_path_outside_mount(client):
     assert "inside" in response.get_json()["error"] or "stay" in response.get_json()["error"]
 
 
-def test_admin_token_is_required(client, monkeypatch):
-    monkeypatch.setattr(central, "ADMIN_TOKEN", "secret")
-    response = client.post("/api/settings", json={"paths": {}})
-    assert response.status_code == 401
+def test_index_has_no_admin_token_prompt(client):
+    response = client.get("/")
+    assert b"adminToken" not in response.data
+    assert b"X-Admin-Token" not in response.data
 
 
 def test_youtube_preferences_are_persisted_with_paths(client, monkeypatch):

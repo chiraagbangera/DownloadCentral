@@ -24,7 +24,6 @@ MOUNT_ROOT = Path(os.environ.get("MOUNT_ROOT", "/mnt")).resolve()
 STATE_DIR = Path(os.environ.get("STATE_DIR", "/var/lib/download-central")).resolve()
 SETTINGS_PATH = Path(os.environ.get("SETTINGS_PATH", str(STATE_DIR / "settings.json"))).resolve()
 ADMIN_HELPER = os.environ.get("ADMIN_HELPER", "/usr/local/sbin/download-central-admin")
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "").strip()
 REQUEST_TIMEOUT = max(2, int(os.environ.get("BACKEND_TIMEOUT", "15")))
 
 SERVICES = {
@@ -357,19 +356,6 @@ def write_settings(settings: dict[str, object]) -> None:
     os.replace(temporary, SETTINGS_PATH)
 
 
-def authorized() -> bool:
-    if not ADMIN_TOKEN:
-        return True
-    supplied = request.headers.get("X-Admin-Token", "")
-    return secrets.compare_digest(supplied, ADMIN_TOKEN)
-
-
-def require_admin() -> Response | None:
-    if authorized():
-        return None
-    return jsonify({"error": "The admin token is missing or incorrect."}), 401
-
-
 def backend_url(service: str, path: str = "") -> str:
     base = str(SERVICES[service]["base_url"]).rstrip("/") + "/"
     return urljoin(base, path.lstrip("/"))
@@ -426,7 +412,6 @@ def index():
         "index.html",
         app_name=APP_NAME,
         mount_root=str(MOUNT_ROOT),
-        admin_token_required=bool(ADMIN_TOKEN),
     )
 
 
@@ -467,15 +452,11 @@ def get_settings():
         "mount_root": str(MOUNT_ROOT),
         "paths": read_settings(),
         "youtube_preferences": read_youtube_preferences(),
-        "admin_token_required": bool(ADMIN_TOKEN),
     })
 
 
 @app.post("/api/settings")
 def save_settings():
-    denied = require_admin()
-    if denied:
-        return denied
     payload = request.get_json(silent=True) or {}
     paths = payload.get("paths")
     if not isinstance(paths, dict):
@@ -617,9 +598,6 @@ def run_update(job_id: str, tool: str) -> None:
 
 @app.post("/api/tools/<tool>/update")
 def update_tool(tool: str):
-    denied = require_admin()
-    if denied:
-        return denied
     if tool not in {"yt-dlp", "ffmpeg"}:
         return jsonify({"error": "Only yt-dlp and ffmpeg can be updated."}), 404
     with update_lock:
@@ -633,9 +611,6 @@ def update_tool(tool: str):
 
 @app.get("/api/tools/updates/<job_id>")
 def update_status(job_id: str):
-    denied = require_admin()
-    if denied:
-        return denied
     with update_lock:
         job = update_jobs.get(job_id)
         if not job:

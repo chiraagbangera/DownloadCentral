@@ -17,14 +17,13 @@ Download Central provides one uniform, tabbed UI for the Raspberry Pi file, HLS,
 - Active source links plus Stop, Retry, and Delete controls in every downloader
 - Activity logs that stay expanded and keep their review position during live updates
 - Persistent YouTube resolution, codec, and MP4/MKV preferences, plus editable per-job settings while queued
-- Smart YouTube selection that keeps the highest resolution tier, then prefers HDR AV1 and H.265 with broader codec/container fallbacks
+- Compatibility-first YouTube selection: HDR AV1 when useful, otherwise H.265, then H.264, with VP9 as the final automatic fallback
 - The actual chosen video/audio resolution, frame rate, HDR mode, codecs, bitrates, and format IDs shown per job
 - Aggregated reachability, storage, ffmpeg, and yt-dlp health
 - Live Raspberry Pi CPU usage/load, CPU temperature, memory/swap, uptime, process, network throughput/counters, and filesystem utilization
 - Persistent per-service destinations anywhere below `/mnt`
 - Folder browser that cannot escape `/mnt`
 - In-app yt-dlp and Raspberry Pi OS ffmpeg updates
-- Admin token protection for settings, service restarts, and updates
 - A single web service and TCP port: `100`
 
 The former downloader systemd services are stopped, disabled, and their unit files are removed during installation. Their application directories remain installed because Download Central imports those engines directly into its single process. Nothing listens on the former ports 98 or 99, and port 100 belongs only to Download Central.
@@ -43,7 +42,7 @@ Then run:
 sudo ./install.sh
 ```
 
-The installer stops and removes the three old service units before starting Download Central. Their `/opt` application directories and downloader state are preserved. Let active downloads finish before installing. It also prints a generated admin token; paste it into the Health & settings tab before saving paths or updating tools. The token is kept in the browser tab only.
+The installer stops and removes the three old service units before starting Download Central. Their `/opt` application directories and downloader state are preserved. Let active downloads finish before installing.
 
 To deploy from another computer:
 
@@ -71,7 +70,7 @@ Paths must be absolute and resolve below `/mnt`. Saving settings restarts the si
 
 The file downloader still supports subfolders within its configured root for individual batches. The settings page changes that root itself.
 
-YouTube defaults are stored in the same `settings.json` file. The default policy caps downloads at 4K, keeps the highest available resolution tier, prefers AV1 for HDR and then H.265 inside that tier, and requests MP4 with MKV as the fallback. When MP4 is preferred, an MP4-compatible AV1 stream is selected before a VP9 stream that would force MKV; this is one of the cases where SDR AV1 is beneficial. A resolution is a ceiling, so unavailable 4K automatically falls back to the best lower resolution. Queued jobs can be edited without changing their queue position; applying new settings to an active job stops it and requeues it at the front.
+YouTube defaults are stored in the same `settings.json` file. The default policy caps downloads at 4K and permits AV1 only when the stream is identified as HDR, HLG, or Dolby Vision; SDR AV1 is excluded. Otherwise it prefers H.265 and then H.264, with VP9 as the final automatic fallback when needed to preserve resolution. MP4 is requested first with MKV as the fallback. Queued jobs can be edited without changing their queue position; applying new settings to an active job stops it and requeues it at the front.
 
 ## Tool updates
 
